@@ -54,6 +54,8 @@ async def test_asr_duration_with_real_socket_synthetic_pcm_and_final_result(monk
                 "asr",
                 "--backend",
                 "yandex",
+                "--lang",
+                "ru",
                 "--server",
                 f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}",
                 "--duration",
@@ -88,7 +90,7 @@ async def test_asr_microphone_failure_cancels_recognition_and_closes_client(monk
 
     monkeypatch.setattr(cli, "input_chunks", failed_input)
     monkeypatch.setenv("YANDEX_ASR_KEY", "local-test-key")
-    args = cli.build_parser().parse_args(["asr", "--backend", "yandex"])
+    args = cli.build_parser().parse_args(["asr", "--backend", "yandex", "--lang", "ru"])
     with pytest.raises(YandexAliceClientError, match="Microphone"):
         await cli.run_asr(args, "local-test-token")
     client.close.assert_awaited_once()

@@ -140,6 +140,8 @@ async def run_asr(args: argparse.Namespace, token: str | None) -> None:
     if args.backend == "local":
         await run_local_asr(args)
         return
+    if args.lang not in {"ru", "en"}:
+        raise ValueError("Серверный ASR требует --lang ru или --lang en.")
     key = setting("YANDEX_ASR_KEY")
     if not token or not key:
         raise ValueError("Для ASR задайте YANDEX_OAUTH_TOKEN и YANDEX_ASR_KEY.")
@@ -190,8 +192,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Исследовательский WebSocket-клиент Алисы.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("devices", help="микрофоны и устройства воспроизведения")
-    models = commands.add_parser("models", help="скачать модель локального ASR (~40–50 МБ)")
-    models.add_argument("--lang", choices=["ru", "en", "all"], default="all")
+    models = commands.add_parser(
+        "models", help="скачать модель локального ASR: auto ~145 МБ, ru/en ~40–50 МБ"
+    )
+    models.add_argument("--lang", choices=["auto", "ru", "en", "all"], default="auto")
     models.add_argument(
         "--mirror",
         choices=["official", "rhasspy"],
@@ -228,7 +232,11 @@ def build_parser() -> argparse.ArgumentParser:
     asr.add_argument("--backend", choices=["local", "yandex"], default="local")
     asr.add_argument("--partial", action="store_true", help="промежуточные результаты в stderr")
     voice = commands.add_parser("voice", help="голосовой диалог с триггером Алиса")
-    voice.add_argument("--wake-word", help="по умолчанию: алиса / alice для английского")
+    voice.add_argument(
+        "--wake-word",
+        action="append",
+        help="триггер; можно повторять. По умолчанию одновременно алиса и alice",
+    )
     voice.add_argument("--command-timeout", type=float, default=10)
     voice.add_argument(
         "--follow-up",
@@ -245,7 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
         source.add_argument("--file", type=Path, help="аудиофайл вместо микрофона")
         source.add_argument("--duration", type=float, help="длительность микрофонной сессии, с")
         command.add_argument("--device", type=device_id, help="номер или имя микрофона из devices")
-        command.add_argument("--lang", choices=["ru", "en"], default="ru")
+        command.add_argument("--lang", choices=["auto", "ru", "en"], default="auto")
         command.add_argument("--model", type=Path, help="папка собственной модели Vosk")
     for command in (chat, tts, asr, voice):
         command.add_argument("--server", default=DEFAULT_SERVER_URL, help="WebSocket URL")
@@ -341,6 +349,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "models":
             from .local_asr import install_model
 
+            if args.lang == "auto":
+                from .multilingual_asr import install_multilingual
+
+                print("Загрузка многоязычной модели (~145 МБ)…", flush=True)
+                print(install_multilingual(), flush=True)
+                return 0
+
             for language in ["ru", "en"] if args.lang == "all" else [args.lang]:
                 print(f"Загрузка модели {language}…", flush=True)
                 print(install_model(language, args.mirror), flush=True)
@@ -352,12 +367,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output_device = device_id(setting("ALICE_OUTPUT_DEVICE"))
         if args.command in {"asr", "voice"} and args.duration is not None:
             args.duration = positive_timeout(args.duration)
+        if args.command in {"asr", "voice"} and args.lang == "auto":
+            if args.model:
+                raise ValueError("--model требует явного --lang ru или --lang en.")
+            if args.command == "asr" and args.backend == "yandex":
+                raise ValueError(
+                    "Серверный ASR требует --lang ru или --lang en; auto работает локально."
+                )
         if args.command == "voice":
             args.command_timeout = positive_timeout(args.command_timeout)
             if args.follow_up != 0:
                 args.follow_up = positive_timeout(args.follow_up)
-            args.wake_word = args.wake_word or ("alice" if args.lang == "en" else "алиса")
-            if not args.wake_word.strip():
+            args.wake_word = args.wake_word or ["алиса", "alice"]
+            args.wake_word = [word.strip().casefold() for word in args.wake_word]
+            if not all(args.wake_word):
                 raise ValueError("Триггер не может быть пустым.")
         if args.command in {"chat", "tts"} and args.text is not None and not args.text.strip():
             raise ValueError("Текст запроса не может быть пустым.")

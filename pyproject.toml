@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alice-client-research"
-version = "0.4.0"
+version = "0.4.1"
 description = "Independent research client for the observed Alice WebSocket protocol"
 readme = "README.md"
 license-files = ["THIRD_PARTY_NOTICES.md"]
@@ -13,7 +13,7 @@ dependencies = ["websockets>=15,<17", "keyring>=25,<26", "python-dotenv>=1.2.2,<
 
 [project.optional-dependencies]
 audio = ["PyAudio>=0.2.14,<0.3"]
-voice = ["vosk>=0.3.45,<0.4", "sounddevice>=0.5,<0.6", "soundfile>=0.13,<0.15", "soxr>=0.5,<2"]
+voice = ["vosk>=0.3.45,<0.4", "sounddevice>=0.5,<0.6", "soundfile>=0.13,<0.15", "soxr>=0.5,<2", "faster-whisper>=1.2,<2"]
 dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "pytest-cov>=6,<8", "ruff>=0.14,<1", "build>=1,<2"]
 
 [project.scripts]

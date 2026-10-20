@@ -74,6 +74,16 @@ def install_model(language: str, mirror: str = "official") -> Path:
 
 class LocalRecognizer:
     def __init__(self, language: str = "ru", model_path: Path | None = None):
+        self.automatic = None
+        if language == "auto":
+            if model_path is not None:
+                raise ValueError(
+                    "--model требует --lang ru или --lang en; auto использует многоязычную модель."
+                )
+            from .multilingual_asr import MultilingualRecognizer
+
+            self.automatic = MultilingualRecognizer()
+            return
         try:
             import vosk
         except ImportError:
@@ -90,15 +100,24 @@ class LocalRecognizer:
         self.recognizer = vosk.KaldiRecognizer(self.model, RATE)
 
     def accept(self, chunk: bytes) -> str | None:
+        if self.automatic is not None:
+            return self.automatic.accept(chunk)
         if self.recognizer.AcceptWaveform(chunk):
             return json.loads(self.recognizer.Result()).get("text", "")
         return None
 
     def partial(self) -> str:
+        if self.automatic is not None:
+            return self.automatic.partial()
         return json.loads(self.recognizer.PartialResult()).get("partial", "")
 
     def finish(self) -> str:
+        if self.automatic is not None:
+            return self.automatic.finish()
         return json.loads(self.recognizer.FinalResult()).get("text", "")
 
     def reset(self) -> None:
+        if self.automatic is not None:
+            self.automatic.reset()
+            return
         self.recognizer.Reset()

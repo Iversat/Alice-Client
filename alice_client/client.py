@@ -329,7 +329,7 @@ class YandexAliceClient:
     def _get_application_payload(self) -> dict[str, str]:
         return {
             "app_id": "aliced_python_dialog_tts",
-            "app_version": "0.4.0",
+            "app_version": "0.4.1",
             "os_version": "CLI",
             "platform": "python_async_client",
             "uuid": self.client_app_uuid,

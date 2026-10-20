@@ -15,13 +15,15 @@ from .local_asr import LocalRecognizer
 
 @dataclass
 class WakeGate:
-    word: str = "алиса"
+    word: str | tuple[str, ...] = ("алиса", "alice")
     window: float = 10
     until: float = 0
 
     def consume(self, text: str, now: float) -> str | None:
         """None = ignore; empty = wake-only; otherwise a command after activation."""
-        match = re.match(r"^(?:эй\s+)?" + re.escape(self.word) + r"\b[\s,.:!?-]*", text, re.I)
+        words = (self.word,) if isinstance(self.word, str) else self.word
+        pattern = "|".join(re.escape(word) for word in sorted(words, key=len, reverse=True))
+        match = re.match(r"^(?:(?:эй|hey)\s+)?(?:" + pattern + r")\b[\s,.:!?-]*", text, re.I)
         if match:
             self.until = now + self.window
             return text[match.end() :].strip()
@@ -30,13 +32,24 @@ class WakeGate:
         return None
 
 
+async def recognize(recognizer, operation, *args):
+    # Inference must not block WebSocket reception or the microphone callback.
+    job = asyncio.create_task(asyncio.to_thread(getattr(recognizer, operation), *args))
+    try:
+        return await asyncio.shield(job)
+    except asyncio.CancelledError:
+        # Finish the in-flight decoder before its caller releases the model.
+        await job
+        raise
+
+
 async def run_local_asr(args, token=None) -> None:
     recognizer = LocalRecognizer(args.lang, args.model)
     print(f"Локальный ASR ({args.lang}); Ctrl+C — остановка.", file=sys.stderr, flush=True)
     last_partial = ""
     async with aclosing(input_chunks(args)) as source:
         async for chunk in source:
-            text = recognizer.accept(chunk)
+            text = await recognize(recognizer, "accept", chunk)
             if text:
                 print(text, flush=True)
             elif args.partial:
@@ -44,7 +57,7 @@ async def run_local_asr(args, token=None) -> None:
                 if partial and partial != last_partial:
                     print(f"… {partial}", file=sys.stderr, flush=True)
                     last_partial = partial
-    text = recognizer.finish()
+    text = await recognize(recognizer, "finish")
     if text:
         print(text, flush=True)
 
@@ -53,20 +66,21 @@ async def run_voice(args, token) -> None:
     from .cli import response_text
 
     recognizer = LocalRecognizer(args.lang, args.model)
-    gate = WakeGate(args.wake_word.casefold(), args.command_timeout)
+    words = (args.wake_word,) if isinstance(args.wake_word, str) else tuple(args.wake_word)
+    gate = WakeGate(words, args.command_timeout)
     loop = asyncio.get_running_loop()
     deadline = loop.time() + args.duration if args.duration else float("inf")
     turns = 0
     client = YandexAliceClient(args.server, token, request_timeout=args.timeout)
     print(
-        f"Локальный ASR ({args.lang}). Скажите «{args.wake_word}» и запрос. "
+        f"Локальный ASR ({args.lang}). Скажите «{' / '.join(words)}» и запрос. "
         "Микрофон закрывается на время ответа. Ctrl+C — выход.",
         flush=True,
     )
 
     async def dispatch(command):
         nonlocal turns
-        if command.casefold() in {"выход", "заверши разговор", "quit", "exit"}:
+        if command.casefold().strip(" .!?") in {"выход", "заверши разговор", "quit", "exit"}:
             return True
         print(f"Вы › {command}", flush=True)
         if not client.connected:
@@ -90,12 +104,12 @@ async def run_voice(args, token) -> None:
             # Same recognizer and gate, with reproducible file input for diagnostics.
             async with aclosing(input_chunks(args)) as source:
                 async for chunk in source:
-                    text = recognizer.accept(chunk)
+                    text = await recognize(recognizer, "accept", chunk)
                     if text:
                         command = gate.consume(text, loop.time())
                         if command and await dispatch(command):
                             return
-                command = gate.consume(recognizer.finish(), loop.time())
+                command = gate.consume(await recognize(recognizer, "finish"), loop.time())
                 if command:
                     await dispatch(command)
             return
@@ -106,7 +120,7 @@ async def run_voice(args, token) -> None:
             command = None
             async with aclosing(input_chunks(args)) as source:
                 async for chunk in source:
-                    text = recognizer.accept(chunk)
+                    text = await recognize(recognizer, "accept", chunk)
                     if text:
                         command = gate.consume(text, loop.time())
                         if command is not None:
@@ -114,7 +128,7 @@ async def run_voice(args, token) -> None:
                                 break
                             print("Слушаю запрос…", flush=True)
                 if not command:
-                    command = gate.consume(recognizer.finish(), loop.time())
+                    command = gate.consume(await recognize(recognizer, "finish"), loop.time())
             if command:
                 if await dispatch(command):
                     return
