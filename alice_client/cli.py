@@ -96,8 +96,7 @@ async def run_chat(args: argparse.Namespace, token: str | None) -> None:
                     continue
                 if not text:
                     continue
-            # In the live anonymous check voice_session=True returned text but
-            # no audio stream. Request the text, then synthesize that answer.
+            # Request speech separately for servers that omit inline audio.
             result = await client.send_text(text, is_tts_response=False)
             payload = result["response_payload"]
             text_output = response_text(payload, require_text=args.audio)
@@ -189,7 +188,7 @@ async def run_asr(args: argparse.Namespace, token: str | None) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Исследовательский WebSocket-клиент Алисы.")
+    parser = argparse.ArgumentParser(description="LS Client — текст и голос для Алисы.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("devices", help="микрофоны и устройства воспроизведения")
     models = commands.add_parser(

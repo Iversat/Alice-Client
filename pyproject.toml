@@ -3,10 +3,11 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "alice-client-research"
-version = "0.4.1"
-description = "Independent research client for the observed Alice WebSocket protocol"
+name = "ls-client"
+version = "0.4.2"
+description = "LS Client: text, speech and local RU/EN recognition for Alice"
 readme = "README.md"
+authors = [{name = "Iversat"}]
 license-files = ["THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.11"
 dependencies = ["websockets>=15,<17", "keyring>=25,<26", "python-dotenv>=1.2.2,<2"]
@@ -17,8 +18,14 @@ voice = ["vosk>=0.3.45,<0.4", "sounddevice>=0.5,<0.6", "soundfile>=0.13,<0.15", 
 dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "pytest-cov>=6,<8", "ruff>=0.14,<1", "build>=1,<2"]
 
 [project.scripts]
+ls-client = "alice_client.cli:main"
+ls-login = "alice_client.passport_auth:main"
 alice-client = "alice_client.cli:main"
 alice-login = "alice_client.passport_auth:main"
+
+[project.urls]
+Repository = "https://github.com/Iversat/LS-Client"
+Issues = "https://github.com/Iversat/LS-Client/issues"
 
 [tool.setuptools]
 packages = ["alice_client"]
