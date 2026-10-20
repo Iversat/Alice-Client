@@ -1,4 +1,5 @@
 include LEGAL_NOTICE.md PROVENANCE.md SECURITY.md CHANGELOG.md
+include THIRD_PARTY_NOTICES.md
 include requirements.txt .env.example
 recursive-include docs *.md *.svg
 recursive-include tests *.py

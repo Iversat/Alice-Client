@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alice-client-research"
-version = "0.2.0"
+version = "0.3.0"
 description = "Independent research client for the observed Alice WebSocket protocol"
 readme = "README.md"
+license-files = ["THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.11"
-dependencies = ["websockets>=15,<17"]
+dependencies = ["websockets>=15,<17", "keyring>=25,<26", "python-dotenv>=1.2.2,<2"]
 
 [project.optional-dependencies]
 audio = ["PyAudio>=0.2.14,<0.3"]
@@ -16,10 +17,11 @@ dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "pytest-cov>=6,<8", "ruff>=0.14,
 
 [project.scripts]
 alice-client = "alice_client.cli:main"
+alice-login = "alice_client.passport_auth:main"
 
 [tool.setuptools]
 packages = ["alice_client"]
-py-modules = ["alice_client_terminal", "alice_client_receiving_tts", "alice_client_speechkit_tts", "alice_client_speechkit_asr"]
+py-modules = ["alice_client_terminal", "alice_client_receiving_tts", "alice_client_speechkit_tts", "alice_client_speechkit_asr", "yandex_login"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
