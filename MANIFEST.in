@@ -1,0 +1,4 @@
+include LEGAL_NOTICE.md PROVENANCE.md SECURITY.md CHANGELOG.md
+include requirements.txt .env.example
+recursive-include docs *.md *.svg
+recursive-include tests *.py
