@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alice-client-research"
+version = "0.2.0"
+description = "Independent research client for the observed Alice WebSocket protocol"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["websockets>=15,<17"]
+
+[project.optional-dependencies]
+audio = ["PyAudio>=0.2.14,<0.3"]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "pytest-cov>=6,<8", "ruff>=0.14,<1", "build>=1,<2"]
+
+[project.scripts]
+alice-client = "alice_client.cli:main"
+
+[tool.setuptools]
+packages = ["alice_client"]
+py-modules = ["alice_client_terminal", "alice_client_receiving_tts", "alice_client_speechkit_tts", "alice_client_speechkit_asr"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title description">
+  <title id="title">Alice Client</title>
+  <desc id="description">Independent research into the Alice WebSocket protocol. Text, audio and recognition.</desc>
+  <defs>
+    <linearGradient id="surface" x2="1" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#0b1017"/></linearGradient>
+    <linearGradient id="accent"><stop stop-color="#c4b5fd"/><stop offset="1" stop-color="#7dd3fc"/></linearGradient>
+  </defs>
+  <rect width="1280" height="360" rx="24" fill="url(#surface)"/>
+  <path d="M0 1h1280" stroke="#334155"/>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <text x="64" y="64" fill="#a5b4fc" font-size="14" font-weight="600" letter-spacing="3">IVERSAT / PROTOCOL RESEARCH</text>
+    <text x="60" y="165" fill="#f8fafc" font-size="76" font-weight="700" letter-spacing="-2">Alice Client</text>
+    <text x="64" y="216" fill="#94a3b8" font-size="23">Text. Audio. A closer look at the protocol.</text>
+    <rect x="64" y="262" width="170" height="34" rx="17" fill="#222d46"/>
+    <text x="149" y="284" fill="#c7d2fe" font-size="13" font-weight="600" text-anchor="middle">PYTHON 3.11+</text>
+    <text x="258" y="284" fill="#94a3b8" font-size="13" letter-spacing="2">INDEPENDENT · UNOFFICIAL</text>
+  </g>
+  <g transform="translate(966 181)" fill="url(#accent)">
+    <rect x="-104" y="-25" width="13" height="50" rx="6"/><rect x="-76" y="-48" width="13" height="96" rx="6"/>
+    <rect x="-48" y="-78" width="13" height="156" rx="6"/><rect x="-20" y="-105" width="13" height="210" rx="6"/>
+    <rect x="8" y="-65" width="13" height="130" rx="6"/><rect x="36" y="-88" width="13" height="176" rx="6"/>
+    <rect x="64" y="-43" width="13" height="86" rx="6"/><rect x="92" y="-21" width="13" height="42" rx="6"/>
+  </g>
+  <rect x="825" y="35" width="375" height="288" rx="20" fill="none" stroke="#334155" stroke-dasharray="4 9"/>
+</svg>
