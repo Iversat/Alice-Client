@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title description">
-  <title id="title">Alice Client</title>
-  <desc id="description">Independent research into the Alice WebSocket protocol. Text, audio and recognition.</desc>
+  <title id="title">LS Client</title>
+  <desc id="description">LS Client by Iversat. Text, voice and local speech recognition.</desc>
   <defs>
     <linearGradient id="surface" x2="1" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#0b1017"/></linearGradient>
     <linearGradient id="accent"><stop stop-color="#c4b5fd"/><stop offset="1" stop-color="#7dd3fc"/></linearGradient>
@@ -8,9 +8,9 @@
   <rect width="1280" height="360" rx="24" fill="url(#surface)"/>
   <path d="M0 1h1280" stroke="#334155"/>
   <g font-family="Segoe UI,Arial,sans-serif">
-    <text x="64" y="64" fill="#a5b4fc" font-size="14" font-weight="600" letter-spacing="3">IVERSAT / PROTOCOL RESEARCH</text>
-    <text x="60" y="165" fill="#f8fafc" font-size="76" font-weight="700" letter-spacing="-2">Alice Client</text>
-    <text x="64" y="216" fill="#94a3b8" font-size="23">Text. Audio. A closer look at the protocol.</text>
+    <text x="64" y="64" fill="#a5b4fc" font-size="14" font-weight="600" letter-spacing="3">IVERSAT / PYTHON PROJECTS</text>
+    <text x="60" y="165" fill="#f8fafc" font-size="76" font-weight="700" letter-spacing="-2">LS Client</text>
+    <text x="64" y="216" fill="#94a3b8" font-size="23">Text. Voice. Local speech recognition.</text>
     <rect x="64" y="262" width="170" height="34" rx="17" fill="#222d46"/>
     <text x="149" y="284" fill="#c7d2fe" font-size="13" font-weight="600" text-anchor="middle">PYTHON 3.11+</text>
     <text x="258" y="284" fill="#94a3b8" font-size="13" letter-spacing="2">INDEPENDENT · UNOFFICIAL</text>

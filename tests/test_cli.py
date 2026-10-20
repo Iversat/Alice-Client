@@ -95,9 +95,9 @@ def test_asr_without_key_does_not_activate_microphone(monkeypatch):
     monkeypatch.delenv("YANDEX_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("YANDEX_ASR_KEY", raising=False)
     mic = AsyncMock()
-    monkeypatch.setattr(cli, "microphone_worker", mic)
+    monkeypatch.setattr(cli, "input_chunks", mic)
     with pytest.raises(SystemExit) as caught:
-        cli.main(["asr"])
+        cli.main(["asr", "--backend", "yandex"])
     assert caught.value.code == 2
     mic.assert_not_awaited()
 

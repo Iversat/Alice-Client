@@ -2,7 +2,7 @@
 
 ## YandexStation — протокол входа через Яндекс Passport
 
-Последовательность запросов в `alice_client/passport_auth.py` адаптирована по открытой реализации [AlexxIT/YandexStation](https://github.com/AlexxIT/YandexStation/blob/master/custom_components/yandex_station/core/yandex_session.py), проверенной 21 октября 2026. Использованы опубликованные идентификаторы приложения из этой реализации; это не пользовательские токены. Этот интерфейс не является официальным OAuth API для сторонних приложений, его доступность может измениться.
+В `alice_client/passport_auth.py` я адаптировал последовательность запросов по открытой реализации [AlexxIT/YandexStation](https://github.com/AlexxIT/YandexStation/blob/master/custom_components/yandex_station/core/yandex_session.py). Использованы опубликованные идентификаторы приложения из этой реализации; это не пользовательские токены. Этот интерфейс не является официальным OAuth API для сторонних приложений, его доступность может измениться.
 
 Ниже сохранены уведомление и условия лицензии исходной реализации. Они относятся к этому заимствованию и не устанавливают лицензию на весь репозиторий; см. PROVENANCE.md.
 

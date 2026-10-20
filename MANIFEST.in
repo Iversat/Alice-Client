@@ -3,3 +3,4 @@ include THIRD_PARTY_NOTICES.md
 include requirements.txt .env.example
 recursive-include docs *.md *.svg
 recursive-include tests *.py
+recursive-include scripts *.py

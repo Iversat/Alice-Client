@@ -39,6 +39,37 @@ async def test_immediate_response_is_registered_before_send():
     assert client._active_requests == client._active_streams == {}
 
 
+async def test_dialogue_carries_server_session_serializes_turns_and_resets():
+    sent = []
+
+    async def reply(client, raw):
+        event = json.loads(raw)["event"]
+        sent.append(event["payload"])
+        await asyncio.sleep(0)
+        await client._on_message(
+            json.dumps(
+                directive(
+                    event["header"]["messageId"],
+                    payload={
+                        "header": {"session_id": f"session-{len(sent)}"},
+                        "response": {"text": "Ответ"},
+                    },
+                )
+            )
+        )
+
+    client = attached_client(reply)
+    await asyncio.gather(client.send_text("one"), client.send_text("two"))
+    assert "header" not in sent[0]
+    assert sent[1]["header"] == {"session_id": "session-1"}
+    client.reset_session()
+    await client.send_text("fresh")
+    assert "header" not in sent[2]
+    client.set_oauth_token("changed-account")
+    await client.send_text("fresh-account")
+    assert "header" not in sent[3]
+
+
 @pytest.mark.parametrize("order", ["text-first", "audio-first"])
 async def test_audio_framing_and_response_order(order):
     async def reply(client, raw):
@@ -70,8 +101,12 @@ async def test_concurrent_requests_can_complete_out_of_order():
                 )
 
     client = attached_client(reply)
-    results = await asyncio.gather(client.send_text("one"), client.send_text("two"))
-    assert [result["response_payload"]["text"] for result in results] == ["0", "1"]
+    # Raw independent requests can arrive out of order; dialogue turns are serialized.
+    results = await asyncio.gather(
+        client._request("Vins", "TextInput", {}, {"VinsResponse"}),
+        client._request("Vins", "TextInput", {}, {"VinsResponse"}),
+    )
+    assert [r["directives"][0]["payload"]["response"]["text"] for r in results] == ["0", "1"]
 
 
 async def test_timeout_releases_incomplete_streams():

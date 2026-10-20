@@ -11,14 +11,23 @@ import sys
 import threading
 import webbrowser
 from collections.abc import Sequence
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from pathlib import Path
 from typing import Any
 
-from .asr import YandexASRClient, microphone_worker
+from .asr import YandexASRClient
+from .audio import input_chunks, play_audio
 from .auth import OAuthToken, TokenStore, YandexAuth, check_access, get_token
 from .client import DEFAULT_SERVER_URL, YandexAliceClient, YandexAliceClientError, positive_timeout
 from .env_auth import file_token, setting
+from .voice import run_local_asr, run_voice
+
+
+def device_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
 
 
 def save_audio_to_file(audio_bytes: bytes | None, filename: str | Path = "response.opus") -> Path:
@@ -81,10 +90,13 @@ async def run_chat(args: argparse.Namespace, token: str | None) -> None:
                     return
                 if text.lower() in {"exit", "quit", "выход"}:
                     return
+                if text.lower() == "/new":
+                    client.reset_session()
+                    print("Новый диалог.")
+                    continue
                 if not text:
                     continue
-            # In the live anonymous check voice_session=True returned text but
-            # no audio stream. Request the text, then synthesize that answer.
+            # Request speech separately for servers that omit inline audio.
             result = await client.send_text(text, is_tts_response=False)
             payload = result["response_payload"]
             text_output = response_text(payload, require_text=args.audio)
@@ -115,49 +127,59 @@ async def run_tts(args: argparse.Namespace, token: str | None) -> None:
                     continue
             else:
                 text = args.text
-            audio = await client.tts(text, voice=args.voice)
+            audio = await client.tts(text, voice=args.voice, lang=args.lang)
             print(f"Аудио: {save_audio_to_file(audio, args.output)}")
+            if args.play:
+                await play_audio(audio, args.output_device)
             if args.text is not None:
                 return
 
 
 async def run_asr(args: argparse.Namespace, token: str | None) -> None:
+    if args.backend == "local":
+        await run_local_asr(args)
+        return
+    if args.lang not in {"ru", "en"}:
+        raise ValueError("Серверный ASR требует --lang ru или --lang en.")
     key = setting("YANDEX_ASR_KEY")
     if not token or not key:
         raise ValueError("Для ASR задайте YANDEX_OAUTH_TOKEN и YANDEX_ASR_KEY.")
-    client = YandexASRClient(args.server, token, key, request_timeout=args.timeout)
+    client = YandexASRClient(
+        args.server,
+        token,
+        key,
+        request_timeout=args.timeout,
+        language={"ru": "ru-RU", "en": "en-US"}[args.lang],
+    )
     client.final_result_callback = lambda text, message_id: print(text, flush=True)
     if args.partial:
         client.partial_result_callback = lambda text, message_id: print(
             f"… {text}", file=sys.stderr
         )
     queue = asyncio.Queue(maxsize=32)
-    stop = asyncio.Event()
     tasks = []
+
+    async def produce():
+        async with aclosing(input_chunks(args)) as source:
+            async for chunk in source:
+                await queue.put(chunk)
+                if args.file:
+                    await asyncio.sleep(len(chunk) / 32000)
+        await queue.put(None)
+
     try:
         await client.connect()
-        mic = asyncio.create_task(microphone_worker(queue, stop), name="alice-microphone")
+        mic = asyncio.create_task(produce(), name="alice-audio-input")
         recognition = asyncio.create_task(client.run_realtime_asr(queue), name="alice-asr")
         tasks.extend([mic, recognition])
-        timer = None
-        if args.duration is not None:
-            timer = asyncio.create_task(asyncio.sleep(args.duration))
-            tasks.append(timer)
-        print("Распознавание. Для остановки нажмите Ctrl+C.", file=sys.stderr)
+        print("Серверный ASR Яндекса. Ctrl+C — остановка.", file=sys.stderr)
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         if recognition in done:
             await recognition
-        elif mic in done:
+        else:
             await mic
-        elif timer in done:
-            stop.set()
-            mic.cancel()
-            await asyncio.gather(mic, return_exceptions=True)
-            if not recognition.done():
-                await asyncio.wait_for(queue.put(None), args.timeout)
-            await recognition
+            await asyncio.wait_for(recognition, args.timeout + 1)
     finally:
-        stop.set()
         for task in tasks:
             if not task.done():
                 task.cancel()
@@ -166,8 +188,19 @@ async def run_asr(args: argparse.Namespace, token: str | None) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Исследовательский WebSocket-клиент Алисы.")
+    parser = argparse.ArgumentParser(description="LS Client — текст и голос для Алисы.")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("devices", help="микрофоны и устройства воспроизведения")
+    models = commands.add_parser(
+        "models", help="скачать модель локального ASR: auto ~145 МБ, ru/en ~40–50 МБ"
+    )
+    models.add_argument("--lang", choices=["auto", "ru", "en", "all"], default="auto")
+    models.add_argument(
+        "--mirror",
+        choices=["official", "rhasspy"],
+        default="official",
+        help="rhasspy: зеркало Hugging Face с проверкой SHA-256",
+    )
     auth_parser = commands.add_parser("auth", help="вход через Яндекс и управление токеном")
     actions = auth_parser.add_subparsers(dest="auth_action", required=True)
     login = actions.add_parser("login", help="получить токен через официальный вход по коду")
@@ -191,12 +224,37 @@ def build_parser() -> argparse.ArgumentParser:
     tts.add_argument("text", nargs="?", help="текст для синтеза; иначе интерактивный режим")
     tts.add_argument("--voice", default="shitova.us", help="идентификатор голоса в протоколе")
     tts.add_argument("--output", type=Path, default=Path("response.opus"))
-    asr = commands.add_parser("asr", help="распознавание с микрофона")
-    asr.add_argument(
-        "--duration", type=float, help="остановить запись через указанное число секунд"
-    )
+    tts.add_argument("--lang", choices=["ru-RU", "en-US"], default="ru-RU")
+    tts.add_argument("--play", action="store_true", help="воспроизвести сохранённое аудио")
+    tts.add_argument("--output-device", type=device_id)
+    asr = commands.add_parser("asr", help="распознавание файла или микрофона: локально / Яндекс")
+    asr.add_argument("--backend", choices=["local", "yandex"], default="local")
     asr.add_argument("--partial", action="store_true", help="промежуточные результаты в stderr")
-    for command in (chat, tts, asr):
+    voice = commands.add_parser("voice", help="голосовой диалог с триггером Алиса")
+    voice.add_argument(
+        "--wake-word",
+        action="append",
+        help="триггер; можно повторять. По умолчанию одновременно алиса и alice",
+    )
+    voice.add_argument("--command-timeout", type=float, default=10)
+    voice.add_argument(
+        "--follow-up",
+        type=float,
+        default=0,
+        help="секунды для продолжения без триггера после ответа; по умолчанию 0",
+    )
+    voice.add_argument("--once", action="store_true", help="завершить после одного ответа")
+    voice.add_argument("--output", type=Path, help="необязательно: папка аудиоответов")
+    voice.add_argument("--output-device", type=device_id)
+    voice.add_argument("--no-play", action="store_true", help="синтезировать без воспроизведения")
+    for command in (asr, voice):
+        source = command.add_mutually_exclusive_group()
+        source.add_argument("--file", type=Path, help="аудиофайл вместо микрофона")
+        source.add_argument("--duration", type=float, help="длительность микрофонной сессии, с")
+        command.add_argument("--device", type=device_id, help="номер или имя микрофона из devices")
+        command.add_argument("--lang", choices=["auto", "ru", "en"], default="auto")
+        command.add_argument("--model", type=Path, help="папка собственной модели Vosk")
+    for command in (chat, tts, asr, voice):
         command.add_argument("--server", default=DEFAULT_SERVER_URL, help="WebSocket URL")
         command.add_argument("--timeout", type=float, default=10, help="таймаут запроса, 10 с")
         auth = command.add_mutually_exclusive_group()
@@ -282,19 +340,59 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "devices":
+            from .audio import devices
+
+            print(devices())
+            return 0
+        if args.command == "models":
+            from .local_asr import install_model
+
+            if args.lang == "auto":
+                from .multilingual_asr import install_multilingual
+
+                print("Загрузка многоязычной модели (~145 МБ)…", flush=True)
+                print(install_multilingual(), flush=True)
+                return 0
+
+            for language in ["ru", "en"] if args.lang == "all" else [args.lang]:
+                print(f"Загрузка модели {language}…", flush=True)
+                print(install_model(language, args.mirror), flush=True)
+            return 0
         if args.command == "auth":
             return run_auth(args)
         args.timeout = positive_timeout(args.timeout)
-        if args.command == "asr" and args.duration is not None:
+        if args.command in {"tts", "voice"} and args.output_device is None:
+            args.output_device = device_id(setting("ALICE_OUTPUT_DEVICE"))
+        if args.command in {"asr", "voice"} and args.duration is not None:
             args.duration = positive_timeout(args.duration)
+        if args.command in {"asr", "voice"} and args.lang == "auto":
+            if args.model:
+                raise ValueError("--model требует явного --lang ru или --lang en.")
+            if args.command == "asr" and args.backend == "yandex":
+                raise ValueError(
+                    "Серверный ASR требует --lang ru или --lang en; auto работает локально."
+                )
+        if args.command == "voice":
+            args.command_timeout = positive_timeout(args.command_timeout)
+            if args.follow_up != 0:
+                args.follow_up = positive_timeout(args.follow_up)
+            args.wake_word = args.wake_word or ["алиса", "alice"]
+            args.wake_word = [word.strip().casefold() for word in args.wake_word]
+            if not all(args.wake_word):
+                raise ValueError("Триггер не может быть пустым.")
         if args.command in {"chat", "tts"} and args.text is not None and not args.text.strip():
             raise ValueError("Текст запроса не может быть пустым.")
         token = None
-        if args.token_prompt:
+        if args.command == "asr" and args.backend == "local":
+            token = None
+        elif args.token_prompt:
             token = getpass.getpass("OAuth-токен (ввод скрыт): ").strip() or None
         else:
             token = get_token(anonymous=args.anonymous)
-        runner = {"chat": run_chat, "tts": run_tts, "asr": run_asr}[args.command]
+        runner = {"chat": run_chat, "tts": run_tts, "asr": run_asr, "voice": run_voice}[
+            args.command
+        ]
         asyncio.run(runner(args, token))
     except ValueError as error:
         parser.error(str(error))

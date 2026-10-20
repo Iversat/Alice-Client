@@ -26,9 +26,13 @@ class YandexASRClient(YandexAliceClient):
         loop: asyncio.AbstractEventLoop | None = None,
         *,
         request_timeout: float = 10,
+        language: str = "ru-RU",
     ) -> None:
         super().__init__(server_url, oauth_token, request_timeout=request_timeout)
         self.asr_key = asr_key
+        if language not in {"ru-RU", "en-US"}:
+            raise ValueError("ASR поддерживает выбор ru-RU или en-US.")
+        self.language = language
         self.partial_result_callback: Callable[[str, str], None] | None = None
         self.final_result_callback: Callable[[str, str], None] | None = None
         self._current_asr_message_id: str | None = None
@@ -115,7 +119,7 @@ class YandexASRClient(YandexAliceClient):
         try:
             if not self.connected:
                 await self.connect()
-            await self.synchronize_state()
+            await self.synchronize_state(lang=self.language)
             while self.connected:
                 # Wait for real audio before opening the next utterance. EOF must
                 # not create an empty ASR request after an already final result.
@@ -147,7 +151,7 @@ class YandexASRClient(YandexAliceClient):
                     "Recognize",
                     {
                         "asr": {
-                            "lang": "ru-RU",
+                            "lang": self.language,
                             "topic": "general",
                             "application": "python_realtime_mic_client",
                             "format": f"audio/x-pcm;bit=16;rate={RATE}",

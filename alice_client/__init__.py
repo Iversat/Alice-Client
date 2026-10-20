@@ -16,4 +16,4 @@ __all__ = [
     "YandexAuth",
     "get_token",
 ]
-__version__ = "0.3.0"
+__version__ = "0.4.2"
