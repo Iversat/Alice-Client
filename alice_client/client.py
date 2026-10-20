@@ -88,13 +88,20 @@ class YandexAliceClient:
         self._active_streams: dict[int, _Stream] = {}
         self._receive_loop_task: asyncio.Task | None = None
         self._lifecycle_lock = asyncio.Lock()
+        self._dialogue_lock = asyncio.Lock()
+        self._session_id: str | None = None
 
     @property
     def connected(self) -> bool:
         return self._is_connected and self._ws is not None
 
     def set_oauth_token(self, token: str | None) -> None:
+        self.reset_session()
         self.oauth_token = token.strip() if token else None
+
+    def reset_session(self) -> None:
+        """Start a new dialogue on the next request; never store server state on disk."""
+        self._session_id = None
 
     async def __aenter__(self) -> YandexAliceClient:
         await self.connect()
@@ -322,7 +329,7 @@ class YandexAliceClient:
     def _get_application_payload(self) -> dict[str, str]:
         return {
             "app_id": "aliced_python_dialog_tts",
-            "app_version": "0.2.0",
+            "app_version": "0.4.0",
             "os_version": "CLI",
             "platform": "python_async_client",
             "uuid": self.client_app_uuid,
@@ -333,6 +340,11 @@ class YandexAliceClient:
         }
 
     async def send_text(self, text: str, is_tts_response: bool = False) -> dict[str, Any]:
+        # Stateful turns must be ordered. TTS requests remain independent.
+        async with self._dialogue_lock:
+            return await self._send_text(text, is_tts_response)
+
+    async def _send_text(self, text: str, is_tts_response: bool) -> dict[str, Any]:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Текст запроса не может быть пустым.")
         payload = {
@@ -344,6 +356,8 @@ class YandexAliceClient:
         }
         if self.oauth_token:
             payload["request"]["additional_options"] = {"oauth_token": self.oauth_token}
+        if self._session_id:
+            payload["header"] = {"session_id": self._session_id}
         result = await self._request(
             "Vins",
             "TextInput",
@@ -357,6 +371,10 @@ class YandexAliceClient:
                 value = body.get("response") if isinstance(body, dict) else None
                 if not isinstance(value, dict):
                     raise YandexAliceClientError("Некорректный формат VinsResponse.")
+                header = body.get("header")
+                session_id = header.get("session_id") if isinstance(header, dict) else None
+                if isinstance(session_id, str) and 0 < len(session_id) <= 4096:
+                    self._session_id = session_id
                 response = value
                 break
         return {

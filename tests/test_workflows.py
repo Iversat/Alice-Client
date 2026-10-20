@@ -42,16 +42,18 @@ async def test_asr_duration_with_real_socket_synthetic_pcm_and_final_result(monk
                     )
                 )
 
-    async def synthetic_microphone(queue, stop):
-        await queue.put(b"\0\0" * 1024)
-        await stop.wait()
+    async def synthetic_microphone(args):
+        yield b"\0\0" * 1024
+        await asyncio.sleep(args.duration)
 
     monkeypatch.setenv("YANDEX_ASR_KEY", "local-test-key")
-    monkeypatch.setattr(cli, "microphone_worker", synthetic_microphone)
+    monkeypatch.setattr(cli, "input_chunks", synthetic_microphone)
     async with serve(handler, "127.0.0.1", 0) as server:
         args = cli.build_parser().parse_args(
             [
                 "asr",
+                "--backend",
+                "yandex",
                 "--server",
                 f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}",
                 "--duration",
@@ -79,11 +81,14 @@ async def test_asr_microphone_failure_cancels_recognition_and_closes_client(monk
 
     client.run_realtime_asr.side_effect = wait_forever
     monkeypatch.setattr(cli, "YandexASRClient", Mock(return_value=client))
-    monkeypatch.setattr(
-        cli, "microphone_worker", AsyncMock(side_effect=YandexAliceClientError("Microphone failed"))
-    )
+
+    async def failed_input(args):
+        raise YandexAliceClientError("Microphone failed")
+        yield  # Async generator, matching the real audio source.
+
+    monkeypatch.setattr(cli, "input_chunks", failed_input)
     monkeypatch.setenv("YANDEX_ASR_KEY", "local-test-key")
-    args = cli.build_parser().parse_args(["asr"])
+    args = cli.build_parser().parse_args(["asr", "--backend", "yandex"])
     with pytest.raises(YandexAliceClientError, match="Microphone"):
         await cli.run_asr(args, "local-test-token")
     client.close.assert_awaited_once()
@@ -96,7 +101,7 @@ def test_legacy_style_interactive_tts(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "YandexAliceClient", Mock(return_value=client))
     monkeypatch.setattr(cli, "read_line", AsyncMock(side_effect=["", "Привет", "exit"]))
     assert cli.main(["tts", "--output", str(tmp_path / "speech.opus")]) == 0
-    client.tts.assert_awaited_once_with("Привет", voice="shitova.us")
+    client.tts.assert_awaited_once_with("Привет", voice="shitova.us", lang="ru-RU")
 
 
 def test_interactive_chat_skips_blank_and_exits(monkeypatch):
