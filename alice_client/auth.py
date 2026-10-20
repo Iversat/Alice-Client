@@ -221,14 +221,17 @@ class YandexAuth:
             result["device_code"], result["user_code"], interval, time.monotonic() + expires
         )
 
-    def wait(self, code: DeviceCode, *, timeout: float = 600) -> OAuthToken:
+    def wait(self, code: DeviceCode, *, timeout: float = 600, cancel=None) -> OAuthToken:
         deadline = min(code.deadline, time.monotonic() + positive_timeout(timeout))
         interval = code.interval
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= interval:
                 raise AuthError("expired_token")
-            time.sleep(interval)
+            if cancel is None:
+                time.sleep(interval)
+            elif cancel.wait(interval):
+                raise AuthError("access_denied")
             data = {
                 "grant_type": "device_code",
                 "code": code.device_code,
@@ -270,12 +273,19 @@ class YandexAuth:
 
 
 def get_token(*, anonymous: bool = False) -> str | None:
-    """Load environment first, then OS vault. Explicit anonymous bypasses both."""
+    """Environment, current-directory .env, then OS vault. Anonymous bypasses all."""
     if anonymous:
         return None
     token = os.getenv("YANDEX_OAUTH_TOKEN", "").strip()
     if token:
         return token
+    from .env_auth import file_token
+
+    saved_file = file_token()
+    if saved_file:
+        if saved_file.expired:
+            raise ValueError("Токен в .env истёк: выполните новый вход через yandex_login.py.")
+        return saved_file.access_token
     try:
         store = TokenStore()
     except AuthError:

@@ -18,6 +18,7 @@ from typing import Any
 from .asr import YandexASRClient, microphone_worker
 from .auth import OAuthToken, TokenStore, YandexAuth, check_access, get_token
 from .client import DEFAULT_SERVER_URL, YandexAliceClient, YandexAliceClientError, positive_timeout
+from .env_auth import file_token, setting
 
 
 def save_audio_to_file(audio_bytes: bytes | None, filename: str | Path = "response.opus") -> Path:
@@ -121,7 +122,7 @@ async def run_tts(args: argparse.Namespace, token: str | None) -> None:
 
 
 async def run_asr(args: argparse.Namespace, token: str | None) -> None:
-    key = os.getenv("YANDEX_ASR_KEY", "").strip()
+    key = setting("YANDEX_ASR_KEY")
     if not token or not key:
         raise ValueError("Для ASR задайте YANDEX_OAUTH_TOKEN и YANDEX_ASR_KEY.")
     client = YandexASRClient(args.server, token, key, request_timeout=args.timeout)
@@ -170,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
     auth_parser = commands.add_parser("auth", help="вход через Яндекс и управление токеном")
     actions = auth_parser.add_subparsers(dest="auth_action", required=True)
     login = actions.add_parser("login", help="получить токен через официальный вход по коду")
-    login.add_argument("--client-id", default=os.getenv("YANDEX_CLIENT_ID"))
+    login.add_argument("--client-id")
     login.add_argument("--scope", help="права из настроек вашего OAuth-приложения")
     login.add_argument("--no-browser", action="store_true")
     login.add_argument("--wait", type=float, default=600)
@@ -221,7 +222,9 @@ def run_auth(args: argparse.Namespace) -> int:
     store = TokenStore()
     if action == "login":
         wait = positive_timeout(args.wait)
-        service = YandexAuth(args.client_id, os.getenv("YANDEX_CLIENT_SECRET"))
+        service = YandexAuth(
+            args.client_id or setting("YANDEX_CLIENT_ID"), setting("YANDEX_CLIENT_SECRET")
+        )
         code = service.start(args.scope)
         print(f"Откройте {code.verification_url}\nКод устройства: {code.user_code}", flush=True)
         print("Подтвердите доступ на сайте Яндекса. Ожидаю…", flush=True)
@@ -243,13 +246,18 @@ def run_auth(args: argparse.Namespace) -> int:
         print("Локальный токен удалён. Отзыв доступа: https://id.yandex.ru/security")
         if os.getenv("YANDEX_OAUTH_TOKEN"):
             print("YANDEX_OAUTH_TOKEN всё ещё задан в окружении и имеет приоритет.")
+        if file_token():
+            print("Токен в .env не удалён и продолжит использоваться клиентом.")
     elif action == "status":
         saved = store.load()
+        saved_file = file_token()
         print(
             json.dumps(
                 {
                     "environment_token": bool(os.getenv("YANDEX_OAUTH_TOKEN", "").strip()),
                     "stored_token": saved is not None,
+                    "env_file_token": saved_file is not None,
+                    "env_file_expired": saved_file.expired if saved_file else None,
                     "expired": saved.expired if saved else None,
                     "scope": saved.scope if saved else None,
                 },
@@ -261,7 +269,7 @@ def run_auth(args: argparse.Namespace) -> int:
         saved = store.load()
         if not saved or not saved.client_id:
             raise ValueError("Нет токена, полученного через auth login.")
-        service = YandexAuth(saved.client_id, os.getenv("YANDEX_CLIENT_SECRET"))
+        service = YandexAuth(saved.client_id, setting("YANDEX_CLIENT_SECRET"))
         store.save(service.refresh(saved))
         print("Токен обновлён в защищённом хранилище ОС.")
     return 0

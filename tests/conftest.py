@@ -6,7 +6,8 @@ from alice_client import auth
 
 
 @pytest.fixture(autouse=True)
-def isolated_credentials(monkeypatch):
+def isolated_credentials(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     values = {}
 
     class MemoryVault:

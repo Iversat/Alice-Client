@@ -1,0 +1,29 @@
+# Сторонние материалы
+
+## YandexStation — протокол входа через Яндекс Passport
+
+Последовательность запросов в `alice_client/passport_auth.py` адаптирована по открытой реализации [AlexxIT/YandexStation](https://github.com/AlexxIT/YandexStation/blob/master/custom_components/yandex_station/core/yandex_session.py), проверенной 21 октября 2026. Использованы опубликованные идентификаторы приложения из этой реализации; это не пользовательские токены. Этот интерфейс не является официальным OAuth API для сторонних приложений, его доступность может измениться.
+
+Ниже сохранены уведомление и условия лицензии исходной реализации. Они относятся к этому заимствованию и не устанавливают лицензию на весь репозиторий; см. PROVENANCE.md.
+
+MIT License
+
+Copyright (c) 2020 AlexxIT
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
