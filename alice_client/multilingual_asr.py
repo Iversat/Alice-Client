@@ -83,11 +83,11 @@ class MultilingualRecognizer:
         return ""
 
     def finish(self):
-        import numpy as np
-
         if self.voiced < RATE * 0.1:
             self.reset()
             return ""
+        import numpy as np
+
         audio = np.frombuffer(bytes(self.buffer), dtype="<i2").astype(np.float32) / 32768
         self.reset()
         _, _, probabilities = self.model.detect_language(audio)
