@@ -9,12 +9,14 @@ import json
 import os
 import sys
 import threading
+import webbrowser
 from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 from .asr import YandexASRClient, microphone_worker
+from .auth import OAuthToken, TokenStore, YandexAuth, check_access, get_token
 from .client import DEFAULT_SERVER_URL, YandexAliceClient, YandexAliceClientError, positive_timeout
 
 
@@ -165,6 +167,20 @@ async def run_asr(args: argparse.Namespace, token: str | None) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Исследовательский WebSocket-клиент Алисы.")
     commands = parser.add_subparsers(dest="command", required=True)
+    auth_parser = commands.add_parser("auth", help="вход через Яндекс и управление токеном")
+    actions = auth_parser.add_subparsers(dest="auth_action", required=True)
+    login = actions.add_parser("login", help="получить токен через официальный вход по коду")
+    login.add_argument("--client-id", default=os.getenv("YANDEX_CLIENT_ID"))
+    login.add_argument("--scope", help="права из настроек вашего OAuth-приложения")
+    login.add_argument("--no-browser", action="store_true")
+    login.add_argument("--wait", type=float, default=600)
+    actions.add_parser("status", help="проверить наличие токена, не раскрывая его")
+    actions.add_parser("check", help="проверить Яндекс ID и чтение умного дома")
+    actions.add_parser("import", help="сохранить существующий токен через скрытый ввод")
+    actions.add_parser("refresh", help="обновить сохранённый токен")
+    actions.add_parser("logout", help="удалить локальный токен; не отзывает его у Яндекса")
+    export = actions.add_parser("token", help="явно вывести токен для использования в своём коде")
+    export.add_argument("--show", action="store_true", help="разрешить вывод секрета в stdout")
     chat = commands.add_parser("chat", help="текстовый чат и озвученный ответ")
     chat.add_argument("--text", help="один запрос вместо интерактивного чата")
     chat.add_argument("--audio", action="store_true", help="запросить аудиоответ")
@@ -184,8 +200,71 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--timeout", type=float, default=10, help="таймаут запроса, 10 с")
         auth = command.add_mutually_exclusive_group()
         auth.add_argument("--token-prompt", action="store_true", help="ввести токен скрыто")
-        auth.add_argument("--anonymous", action="store_true", help="игнорировать токен окружения")
+        auth.add_argument("--anonymous", action="store_true", help="игнорировать все токены")
     return parser
+
+
+def run_auth(args: argparse.Namespace) -> int:
+    action = args.auth_action
+    if action in {"check", "token"}:
+        if action == "token" and not args.show:
+            raise ValueError("Для вывода секрета нужен --show. В Python используйте get_token().")
+        token = get_token()
+        if not token:
+            raise ValueError("Нет токена. Выполните auth login или auth import.")
+        if action == "token":
+            print(token)
+            return 0
+        result = check_access(token)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if all(item["ok"] for item in result.values()) else 1
+    store = TokenStore()
+    if action == "login":
+        wait = positive_timeout(args.wait)
+        service = YandexAuth(args.client_id, os.getenv("YANDEX_CLIENT_SECRET"))
+        code = service.start(args.scope)
+        print(f"Откройте {code.verification_url}\nКод устройства: {code.user_code}", flush=True)
+        print("Подтвердите доступ на сайте Яндекса. Ожидаю…", flush=True)
+        if not args.no_browser:
+            webbrowser.open(code.verification_url)
+        token = service.wait(code, timeout=wait)
+        store.save(token)
+        print(
+            "Токен сохранён в защищённом хранилище ОС. Клиент будет использовать его автоматически."
+        )
+    elif action == "import":
+        token = getpass.getpass("OAuth-токен (ввод скрыт): ").strip()
+        if not token:
+            raise ValueError("Токен не может быть пустым.")
+        store.save(OAuthToken(token))
+        print("Токен сохранён. Проверка прав: python -m alice_client auth check")
+    elif action == "logout":
+        store.delete()
+        print("Локальный токен удалён. Отзыв доступа: https://id.yandex.ru/security")
+        if os.getenv("YANDEX_OAUTH_TOKEN"):
+            print("YANDEX_OAUTH_TOKEN всё ещё задан в окружении и имеет приоритет.")
+    elif action == "status":
+        saved = store.load()
+        print(
+            json.dumps(
+                {
+                    "environment_token": bool(os.getenv("YANDEX_OAUTH_TOKEN", "").strip()),
+                    "stored_token": saved is not None,
+                    "expired": saved.expired if saved else None,
+                    "scope": saved.scope if saved else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    elif action == "refresh":
+        saved = store.load()
+        if not saved or not saved.client_id:
+            raise ValueError("Нет токена, полученного через auth login.")
+        service = YandexAuth(saved.client_id, os.getenv("YANDEX_CLIENT_SECRET"))
+        store.save(service.refresh(saved))
+        print("Токен обновлён в защищённом хранилище ОС.")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -195,14 +274,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "auth":
+            return run_auth(args)
         args.timeout = positive_timeout(args.timeout)
         if args.command == "asr" and args.duration is not None:
             args.duration = positive_timeout(args.duration)
         if args.command in {"chat", "tts"} and args.text is not None and not args.text.strip():
             raise ValueError("Текст запроса не может быть пустым.")
-        token = None if args.anonymous else os.getenv("YANDEX_OAUTH_TOKEN", "").strip() or None
+        token = None
         if args.token_prompt:
             token = getpass.getpass("OAuth-токен (ввод скрыт): ").strip() or None
+        else:
+            token = get_token(anonymous=args.anonymous)
         runner = {"chat": run_chat, "tts": run_tts, "asr": run_asr}[args.command]
         asyncio.run(runner(args, token))
     except ValueError as error:

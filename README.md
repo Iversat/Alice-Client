@@ -18,6 +18,8 @@
 | Озвученный ответ | `python -m alice_client chat --audio` | Текст и аудиофайл |
 | Синтез речи | `python -m alice_client tts "Привет"` | Аудио переданного текста |
 | Распознавание | `python -m alice_client asr` | Текст с микрофона; нужны PyAudio, токен и ключ ASR |
+| Вход в Яндекс | `python -m alice_client auth login --client-id YOUR_CLIENT_ID` | Токен в защищённом хранилище ОС |
+| Проверка прав | `python -m alice_client auth check` | Отдельные результаты Яндекс ID и умного дома |
 
 Клиент сопоставляет ответы с запросами по `messageId`, собирает бинарные аудиочасти по `streamId`, ограничивает время ожидания и объём аудио. Запрос регистрируется до отправки, поэтому быстрый ответ не теряется. При закрытии соединения, отмене или таймауте ожидающие операции завершаются и освобождают ресурсы.
 
@@ -46,7 +48,49 @@ python -m alice_client chat --anonymous --text "Привет"
 python -m alice_client chat --token-prompt
 ```
 
-Токен не печатается и не записывается в файлы. Для автоматизации CLI читает `YANDEX_OAUTH_TOKEN` из окружения процесса. Файл `.env.example` показывает имена переменных, но `.env` автоматически не загружается. Не вставляйте токены в исходники, аргументы команд, issue или скриншоты. Флаг `--anonymous` игнорирует токен окружения.
+Скрытый ввод действует только на текущий запуск. Для сохранения входа используйте команды ниже. CLI выбирает токен из `YANDEX_OAUTH_TOKEN`, затем из защищённого хранилища ОС. Файл `.env.example` показывает имена переменных, но `.env` автоматически не загружается. Не вставляйте токены в исходники, аргументы команд, issue или скриншоты. Флаг `--anonymous` игнорирует оба источника токена.
+
+## Вход и токен аккаунта
+
+1. Зарегистрируйте своё приложение на [Яндекс OAuth](https://oauth.yandex.ru/). Для чтения умного дома укажите `iot:view`; для управления нужен отдельный доступ `iot:control`. Не запрашивайте лишних прав. Токен приложения для входа через Яндекс ID может иметь другой набор доступов.
+2. Скопируйте **ClientID** (это идентификатор, а не токен аккаунта).
+3. Запустите вход, откройте показанную страницу Яндекса, введите код устройства и подтвердите нужные доступы:
+
+```bash
+python -m alice_client auth login --client-id YOUR_CLIENT_ID
+python -m alice_client auth status
+python -m alice_client auth check
+python -m alice_client chat --text "Привет"
+```
+
+Авторизация реализована по официальному [Device Authorization Flow Яндекса](https://yandex.ru/dev/id/doc/ru/codes/screen-code-oauth). Пароль вводится только на стороне Яндекса. Клиент не извлекает cookies браузера. Если для приложения требуется Client secret, передайте его через окружение `YANDEX_CLIENT_SECRET`; он не записывается клиентом. `YANDEX_CLIENT_ID` заменяет аргумент `--client-id`. `--no-browser` позволяет открыть страницу самостоятельно, `--wait 300` ограничивает ожидание.
+
+Токен сохраняется через `keyring`: Windows Credential Manager, macOS Keychain или защищённый системный keyring Linux. При отсутствии подходящего хранилища вход с сохранением завершается ошибкой; в таком окружении доступны `YANDEX_OAUTH_TOKEN` и `--token-prompt`. Открытые файлы с токенами не создаются.
+
+```bash
+# Сохранить уже имеющийся токен через скрытый ввод.
+python -m alice_client auth import
+
+# Обновить токен, выданный через auth login (при наличии refresh_token).
+python -m alice_client auth refresh
+
+# Удалить локальную копию. Это не отзывает доступ приложения у Яндекса.
+python -m alice_client auth logout
+```
+
+`auth check` выполняет только чтение: отдельно обращается к Яндекс ID и [официальному API умного дома](https://yandex.ru/dev/dialogs/smart-home/doc/ru/concepts/platform-protocol). Вывод содержит успешность проверок и количество устройств/групп/сценариев, без имён, адресов и идентификаторов. Код выхода `1` означает, что хотя бы одна из проверок не прошла: у токена для умного дома может не быть доступа к Яндекс ID и наоборот. Это не означает, что весь токен недействителен.
+
+Для использования токена в своём коде:
+
+```python
+from alice_client import YandexAliceClient, get_token
+
+client = YandexAliceClient(oauth_token=get_token())
+```
+
+Если нужен именно текст токена, команда `python -m alice_client auth token --show` явно выводит секрет в stdout. Используйте её только в приватном терминале и не публикуйте вывод. Обычно достаточно `get_token()`.
+
+В диалоге токен передаётся в `System.SynchronizeState` и `Vins.TextInput`, в TTS — в `TTS.Generate`. Сервер сам определяет доступные функции. Успешный OAuth-вход или ответ на «Привет» не доказывает, что недокументированный диалог использует аккаунт, подписку или умеет управлять домом. Токен с `iot:view` разрешает чтение; управление через официальный API требует `iot:control`. Анонимный режим не даёт доступа к данным личного умного дома. Для ASR по-прежнему требуется отдельный `YANDEX_ASR_KEY`.
 
 ## Команды
 
@@ -86,14 +130,13 @@ python -m alice_client asr --token-prompt --duration 30 --partial
 
 ```python
 import asyncio
-import os
 
-from alice_client import YandexAliceClient
+from alice_client import YandexAliceClient, get_token
 
 
 async def main():
     async with YandexAliceClient(
-        oauth_token=os.getenv("YANDEX_OAUTH_TOKEN"),
+        oauth_token=get_token(),
         request_timeout=10,
     ) as client:
         result = await client.send_text("Привет")
