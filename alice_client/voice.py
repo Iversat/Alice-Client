@@ -9,7 +9,7 @@ from contextlib import aclosing
 from dataclasses import dataclass
 
 from .audio import input_chunks, play_audio
-from .client import YandexAliceClient
+from .client import YandexAliceClient, YandexAliceClientError
 from .local_asr import LocalRecognizer
 
 
@@ -21,9 +21,10 @@ class WakeGate:
 
     def consume(self, text: str, now: float) -> str | None:
         """None = ignore; empty = wake-only; otherwise a command after activation."""
+        text = text.strip()
         words = (self.word,) if isinstance(self.word, str) else self.word
         pattern = "|".join(re.escape(word) for word in sorted(words, key=len, reverse=True))
-        match = re.match(r"^(?:(?:эй|hey)\s+)?(?:" + pattern + r")\b[\s,.:!?-]*", text, re.I)
+        match = re.match(r"^(?:(?:эй|hey)\s+)?(?:" + pattern + r")\b[\s,.:!?—–-]*", text, re.I)
         if match:
             self.until = now + self.window
             return text[match.end() :].strip()
@@ -71,6 +72,7 @@ async def run_voice(args, token) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + args.duration if args.duration else float("inf")
     turns = 0
+    audio_time = 0.0
     client = YandexAliceClient(args.server, token, request_timeout=args.timeout)
     print(
         f"Локальный ASR ({args.lang}). Скажите «{' / '.join(words)}» и запрос. "
@@ -89,14 +91,22 @@ async def run_voice(args, token) -> None:
         result = await client.send_text(command)
         answer = response_text(result["response_payload"], require_text=True)
         print(f"Алиса › {answer}", flush=True)
-        audio = await client.tts(answer)
-        if args.output:
-            args.output.mkdir(parents=True, exist_ok=True)
-            (args.output / f"reply-{turns + 1:03d}.opus").write_bytes(audio)
-        if not args.no_play:
-            await play_audio(audio, args.output_device)
+        try:
+            audio = await client.tts(answer)
+            if args.output:
+                args.output.mkdir(parents=True, exist_ok=True)
+                (args.output / f"reply-{turns + 1:03d}.opus").write_bytes(audio)
+            if not args.no_play:
+                await play_audio(audio, args.output_device)
+        except (YandexAliceClientError, OSError, TimeoutError) as error:
+            # The text turn has already completed; never resend a user's command.
+            print(
+                f"Озвучивание недоступно ({type(error).__name__}); ответ показан текстом.",
+                file=sys.stderr,
+                flush=True,
+            )
         turns += 1
-        gate.until = loop.time() + args.follow_up
+        gate.until = (audio_time if args.file else loop.time()) + args.follow_up
         return args.once
 
     try:
@@ -104,12 +114,13 @@ async def run_voice(args, token) -> None:
             # Same recognizer and gate, with reproducible file input for diagnostics.
             async with aclosing(input_chunks(args)) as source:
                 async for chunk in source:
+                    audio_time += len(chunk) / 32000  # PCM16 mono at 16 kHz.
                     text = await recognize(recognizer, "accept", chunk)
                     if text:
-                        command = gate.consume(text, loop.time())
+                        command = gate.consume(text, audio_time)
                         if command and await dispatch(command):
                             return
-                command = gate.consume(await recognize(recognizer, "finish"), loop.time())
+                command = gate.consume(await recognize(recognizer, "finish"), audio_time)
                 if command:
                     await dispatch(command)
             return

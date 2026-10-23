@@ -1,8 +1,8 @@
-![LS Client — текст и голос для Алисы](docs/banner.svg)
+![Alice Client — текст и голос для Алисы](docs/banner.svg)
 
-# LS Client
+# Alice Client
 
-Я разрабатываю LS Client для работы с Алисой из Python: текстового диалога, синтеза речи и голосового общения. В одном проекте я объединил WebSocket-клиент, вход в Яндекс и локальное распознавание русского и английского языка.
+Я разрабатываю Alice Client для работы с Алисой из Python: текстового диалога, синтеза речи и голосового общения. В одном проекте я объединил WebSocket-клиент, вход в Яндекс и локальное распознавание русского и английского языка.
 
 **Python 3.11+** · **Asyncio** · **RU / EN** · **CLI**
 
@@ -13,8 +13,8 @@
 ## Установка
 
 ```powershell
-git clone https://github.com/Iversat/LS-Client.git
-cd LS-Client
+git clone https://github.com/Iversat/Alice-Client.git
+cd Alice-Client
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 .\.venv\Scripts\python.exe -m alice_client chat --anonymous --text "Привет"
@@ -22,7 +22,16 @@ py -m venv .venv
 
 В Linux и macOS используйте `python3 -m venv .venv` и `.venv/bin/python` вместо пути Windows. Активация окружения необязательна.
 
-После установки доступны команды `ls-client` и `ls-login`. Для совместимости я сохранил модуль `alice_client`, прежние команды `alice-client` / `alice-login` и имена исходных скриптов. Папка проекта может называться произвольно.
+После установки доступны команды `alice-client` и `alice-login`. Я сохранил модуль `alice_client`, имена исходных скриптов и совместимые команды `ls-client` / `ls-login`. Папка проекта может называться произвольно.
+
+## Обновление прежней установки
+
+Если вы устанавливали проект под старым именем, я рекомендую удалить прежний пакет из того же виртуального окружения перед обновлением: разные пакеты могут содержать одинаковые Python-модули и команды.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip uninstall ls-client alice-client-research
+.\.venv\Scripts\python.exe -m pip install -e ".[voice]"
+```
 
 ## Вход в аккаунт
 
@@ -112,6 +121,8 @@ Ctrl+C и команда «Алиса, выход» завершают голо�
 
 Серверный ASR включается явно: `asr --backend yandex --file recording.wav --lang ru`. Для него нужны OAuth-токен и отдельный `YANDEX_ASR_KEY`. Локальные режимы распознавания обходятся без них.
 
+При обработке `voice --file` я учитываю длительность записи для окна активации и `--follow-up`. Если озвучивание не удалось, клиент показывает ответ текстом и продолжает разговор без повторной отправки команды.
+
 ## Python API
 
 ```python
@@ -135,4 +146,4 @@ asyncio.run(main())
 
 Я использую pytest, Ruff и GitHub Actions. Команды проверок и способы повторить сетевые сценарии приведены в [docs/TESTING.md](docs/TESTING.md). Изменения версий — в [CHANGELOG.md](CHANGELOG.md).
 
-Об ошибках можно написать мне в [Issues](https://github.com/Iversat/LS-Client/issues). Для сообщений с чувствительными данными см. [SECURITY.md](SECURITY.md).
+Об ошибках можно написать мне в [Issues](https://github.com/Iversat/Alice-Client/issues). Для сообщений с чувствительными данными см. [SECURITY.md](SECURITY.md).

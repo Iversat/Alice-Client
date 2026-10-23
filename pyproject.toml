@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ls-client"
-version = "0.4.2"
-description = "LS Client: text, speech and local RU/EN recognition for Alice"
+name = "alice-client"
+version = "0.4.3"
+description = "Alice Client: text, speech and local RU/EN recognition for Alice"
 readme = "README.md"
 authors = [{name = "Iversat"}]
 license-files = ["THIRD_PARTY_NOTICES.md"]
@@ -24,8 +24,8 @@ alice-client = "alice_client.cli:main"
 alice-login = "alice_client.passport_auth:main"
 
 [project.urls]
-Repository = "https://github.com/Iversat/LS-Client"
-Issues = "https://github.com/Iversat/LS-Client/issues"
+Repository = "https://github.com/Iversat/Alice-Client"
+Issues = "https://github.com/Iversat/Alice-Client/issues"
 
 [tool.setuptools]
 packages = ["alice_client"]

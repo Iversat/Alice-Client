@@ -188,7 +188,7 @@ async def run_asr(args: argparse.Namespace, token: str | None) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="LS Client — текст и голос для Алисы.")
+    parser = argparse.ArgumentParser(description="Alice Client — текст и голос для Алисы.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("devices", help="микрофоны и устройства воспроизведения")
     models = commands.add_parser(
