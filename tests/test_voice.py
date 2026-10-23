@@ -28,6 +28,14 @@ def test_file_duration_are_exclusive(command):
 
 async def test_voice_gate_only_sends_activated_text_and_speaks_real_reply(monkeypatch, tmp_path):
     state = {"capture_open": False}
+    started_at = asyncio.get_running_loop().time()
+    original_consume = WakeGate.consume
+
+    def consume(gate, text, now):
+        assert now >= started_at
+        return original_consume(gate, text, now)
+
+    monkeypatch.setattr(WakeGate, "consume", consume)
     utterances = iter(["посторонняя речь", "алиса сколько будет два плюс два"])
 
     class Recognizer:
@@ -252,3 +260,80 @@ def test_model_download_rejects_bad_hash_or_unsafe_archive(monkeypatch, tmp_path
         local_asr.install_model("ru")
     assert not (tmp_path / "outside").exists()
     assert list((tmp_path / "cache").iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("  Алиса — привет  ", "привет"),
+        ("Alice – hello", "hello"),
+        ("Aliceanna hello", None),
+        ("  hey Alice, hello", "hello"),
+    ],
+)
+def test_wake_gate_spacing_and_punctuation(text, expected):
+    assert WakeGate().consume(text, 1) == expected
+
+
+@pytest.mark.parametrize("failure", ["tts", "playback"])
+async def test_voice_audio_failure_keeps_text_and_continues(monkeypatch, capsys, failure):
+    from alice_client import YandexAliceClientError
+
+    recognizer = Mock(
+        accept=Mock(side_effect=["Алиса привет", "Алиса пока"]), finish=Mock(return_value="")
+    )
+
+    async def source(args):
+        yield bytes(32000)
+        yield bytes(32000)
+
+    client = Mock(
+        connected=True,
+        close=AsyncMock(),
+        send_text=AsyncMock(return_value={"response_payload": {"text": "Ответ"}}),
+        tts=AsyncMock(return_value=b"audio"),
+    )
+    playback = AsyncMock()
+    if failure == "tts":
+        client.tts.side_effect = [YandexAliceClientError("failed"), b"audio"]
+    else:
+        playback.side_effect = [YandexAliceClientError("failed"), None]
+    monkeypatch.setattr(voice, "LocalRecognizer", Mock(return_value=recognizer))
+    monkeypatch.setattr(voice, "input_chunks", source)
+    monkeypatch.setattr(voice, "YandexAliceClient", Mock(return_value=client))
+    monkeypatch.setattr(voice, "play_audio", playback)
+    args = cli.build_parser().parse_args(["voice", "--file", "sample.wav"])
+    args.wake_word = ["алиса", "alice"]
+    await voice.run_voice(args, None)
+    assert [call.args[0] for call in client.send_text.await_args_list] == ["привет", "пока"]
+    assert capsys.readouterr().err.count("Озвучивание недоступно") == 1
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.parametrize("first,follow_up", [("Алиса", 0), ("Алиса привет", 2)])
+async def test_file_silence_expires_wake_and_follow_up(monkeypatch, first, follow_up):
+    recognizer = Mock(
+        accept=Mock(side_effect=[first, "", "посторонняя речь"]), finish=Mock(return_value="")
+    )
+
+    async def source(args):
+        yield bytes(32000)
+        yield bytes(32000 * 12)
+        yield bytes(32000)
+
+    client = Mock(
+        connected=True,
+        close=AsyncMock(),
+        send_text=AsyncMock(return_value={"response_payload": {"text": "Ответ"}}),
+        tts=AsyncMock(return_value=b"audio"),
+    )
+    monkeypatch.setattr(voice, "LocalRecognizer", Mock(return_value=recognizer))
+    monkeypatch.setattr(voice, "input_chunks", source)
+    monkeypatch.setattr(voice, "YandexAliceClient", Mock(return_value=client))
+    args = cli.build_parser().parse_args(
+        ["voice", "--file", "sample.wav", "--no-play", "--follow-up", str(follow_up)]
+    )
+    args.wake_word = ["алиса", "alice"]
+    await voice.run_voice(args, None)
+    expected = ["привет"] if follow_up else []
+    assert [call.args[0] for call in client.send_text.await_args_list] == expected
